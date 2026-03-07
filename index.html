@@ -221,16 +221,19 @@
             
             compress: {
                 files: [],
-                isProcessing: false
+                isProcessing: false,
+                processedFile: null
             },
             split: {
                 files: [],
                 pdfDoc: null, 
-                splitPoints: [], // Changed from single splitPoint to array
-                visualsGenerated: false
+                splitPoints: [],
+                visualsGenerated: false,
+                processedFile: null
             },
             merge: {
-                files: []
+                files: [],
+                processedFile: null
             },
             organize: {
                 files: [],
@@ -239,15 +242,18 @@
                 pageRotations: [], 
                 pageOrder: [],
                 thumbnails: [],
-                visualsGenerated: false
+                visualsGenerated: false,
+                processedFile: null
             },
             convert: {
                 mode: 'img2pdf',
                 images: [],      
-                pdfFiles: []    
+                pdfFiles: [],
+                processedFile: null
             },
             number: {
-                files: []
+                files: [],
+                processedFile: null
             }
         };
 
@@ -293,22 +299,21 @@
                     break;
                 case 'split':
                     container.innerHTML = getSplitTemplate();
-                    if(appState.split.files.length > 0 && !appState.split.visualsGenerated) {
+                    if(appState.split.files.length > 0 && !appState.split.visualsGenerated && !appState.split.processedFile) {
                         loadSplitPreview(appState.split.files[0]);
-                    } else if (appState.split.visualsGenerated) {
+                    } else if (appState.split.visualsGenerated && !appState.split.processedFile) {
                         loadSplitPreview(appState.split.files[0]); 
                     }
                     break;
                 case 'merge':
                     container.innerHTML = getMergeTemplate();
-                    setupMergeDragAndDrop(); 
+                    if(!appState.merge.processedFile) setupMergeDragAndDrop(); 
                     break;
                 case 'organize':
                     container.innerHTML = getOrganizeTemplate();
-                    // Load preview logic
-                    if(appState.organize.files.length > 0 && !appState.organize.visualsGenerated) {
+                    if(appState.organize.files.length > 0 && !appState.organize.visualsGenerated && !appState.organize.processedFile) {
                         loadOrganizePreview(appState.organize.files[0]);
-                    } else if (appState.organize.visualsGenerated) {
+                    } else if (appState.organize.visualsGenerated && !appState.organize.processedFile) {
                         renderOrganizeGrid();
                     }
                     break;
@@ -342,8 +347,69 @@
             `;
         }
 
+        // --- SUCCESS TEMPLATE GENERATOR ---
+        function getSuccessTemplate() {
+            const tab = appState.currentTab;
+            const file = appState[tab].processedFile;
+            if (!file) return '';
+
+            // ZIP files (from Split or PDF2Img) cannot be transferred to other PDF tools
+            const canTransfer = !file.name.endsWith('.zip');
+
+            return `
+                <div class="flex flex-col items-center justify-center h-[450px] text-center p-8">
+                    <div class="w-20 h-20 bg-green-900/30 text-green-400 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <i data-lucide="check-circle" class="w-10 h-10"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-200 mb-2">処理完了</h2>
+                    <p class="text-slate-400 mb-8">${file.name}</p>
+                    
+                    <div class="flex flex-col gap-4 w-full max-w-md mx-auto">
+                        <button onclick="downloadProcessedFile()" class="w-full bg-blue-600 text-white py-3 rounded-xl text-lg font-bold hover:bg-blue-500 shadow-lg flex items-center justify-center gap-2">
+                            <i data-lucide="download" class="w-5 h-5"></i>
+                            ダウンロード
+                        </button>
+                        
+                        ${canTransfer ? `
+                        <div class="relative flex py-2 items-center">
+                            <div class="flex-grow border-t border-slate-700"></div>
+                            <span class="flex-shrink-0 mx-4 text-slate-500 text-sm">または続けて編集</span>
+                            <div class="flex-grow border-t border-slate-700"></div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <button onclick="transferProcessedFile('compress')" class="bg-slate-700 text-slate-300 py-2 rounded-lg text-sm font-medium hover:bg-slate-600 hover:text-white flex flex-col items-center gap-1 ${tab==='compress' ? 'hidden':''}">
+                                <i data-lucide="minimize-2" class="w-4 h-4"></i>圧縮
+                            </button>
+                            <button onclick="transferProcessedFile('split')" class="bg-slate-700 text-slate-300 py-2 rounded-lg text-sm font-medium hover:bg-slate-600 hover:text-white flex flex-col items-center gap-1 ${tab==='split' ? 'hidden':''}">
+                                <i data-lucide="scissors" class="w-4 h-4"></i>分割
+                            </button>
+                            <button onclick="transferProcessedFile('merge')" class="bg-slate-700 text-slate-300 py-2 rounded-lg text-sm font-medium hover:bg-slate-600 hover:text-white flex flex-col items-center gap-1 ${tab==='merge' ? 'hidden':''}">
+                                <i data-lucide="merge" class="w-4 h-4"></i>結合
+                            </button>
+                            <button onclick="transferProcessedFile('organize')" class="bg-slate-700 text-slate-300 py-2 rounded-lg text-sm font-medium hover:bg-slate-600 hover:text-white flex flex-col items-center gap-1 ${tab==='organize' ? 'hidden':''}">
+                                <i data-lucide="layers" class="w-4 h-4"></i>整理
+                            </button>
+                            <button onclick="transferProcessedFile('convert')" class="bg-slate-700 text-slate-300 py-2 rounded-lg text-sm font-medium hover:bg-slate-600 hover:text-white flex flex-col items-center gap-1 ${tab==='convert' ? 'hidden':''}">
+                                <i data-lucide="image" class="w-4 h-4"></i>変換
+                            </button>
+                            <button onclick="transferProcessedFile('number')" class="bg-slate-700 text-slate-300 py-2 rounded-lg text-sm font-medium hover:bg-slate-600 hover:text-white flex flex-col items-center gap-1 ${tab==='number' ? 'hidden':''}">
+                                <i data-lucide="hash" class="w-4 h-4"></i>番号
+                            </button>
+                        </div>
+                        ` : ''}
+                    </div>
+                    <button onclick="resetCurrentTab()" class="mt-6 text-sm text-slate-400 hover:text-slate-200 underline">
+                        最初からやり直す
+                    </button>
+                </div>
+            `;
+        }
+
         // --- COMPRESS TEMPLATE ---
         function getCompressTemplate() {
+            if (appState.compress.processedFile) return getSuccessTemplate();
+            
             if (appState.compress.isProcessing) {
                 return `
                     <div class="flex flex-col items-center justify-center h-[450px] text-center p-8">
@@ -354,9 +420,9 @@
                     </div>
                 `;
             }
-            
+
             if (appState.compress.files.length === 0) {
-                return getUploadBoxHTML('compress', '.pdf', "クリックしてファイルを選択", "アップロード後、自動的に圧縮・ダウンロードされます");
+                return getUploadBoxHTML('compress', '.pdf', "クリックしてファイルを選択", "アップロード後、自動的に圧縮処理が始まります");
             }
 
             return getUploadBoxHTML('compress', '.pdf', "別のファイルを圧縮", "クリックして選択");
@@ -365,6 +431,8 @@
 
         // --- SPLIT TEMPLATE ---
         function getSplitTemplate() {
+            if (appState.split.processedFile) return getSuccessTemplate();
+
             if (appState.split.files.length === 0) {
                 return getUploadBoxHTML('split', '.pdf');
             }
@@ -404,6 +472,12 @@
 
         // --- MERGE TEMPLATE ---
         function getMergeTemplate() {
+            if (appState.merge.processedFile) return getSuccessTemplate();
+
+            if (appState.merge.files.length === 0) {
+                return getUploadBoxHTML('merge-upload', '.pdf', "クリックしてファイルを選択", "(複数選択可)");
+            }
+
             const listHtml = appState.merge.files.map((file, idx) => `
                 <div class="draggable-item flex items-center justify-between bg-slate-700 border border-slate-600 p-4 rounded-xl mb-3 group hover:border-blue-500 transition-colors" draggable="true" data-index="${idx}">
                     <div class="flex items-center gap-4 overflow-hidden pointer-events-none">
@@ -437,7 +511,7 @@
                         <div class="p-8 border-t border-slate-700 bg-slate-800">
                             <button onclick="processMerge()" class="w-full bg-blue-600 text-white py-4 rounded-xl text-lg font-bold hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20 flex items-center justify-center gap-3">
                                 <i data-lucide="merge" class="w-6 h-6"></i>
-                                結合してダウンロード
+                                処理を実行
                             </button>
                         </div>
                     ` : ''}
@@ -447,6 +521,8 @@
 
         // --- ORGANIZE TEMPLATE ---
         function getOrganizeTemplate() {
+            if (appState.organize.processedFile) return getSuccessTemplate();
+
             if (appState.organize.files.length === 0) {
                 return getUploadBoxHTML('organize', '.pdf');
             }
@@ -461,7 +537,7 @@
                         <div class="flex gap-3">
                              <button onclick="resetCurrentTab()" class="text-slate-400 hover:text-slate-200 px-4"><i data-lucide="rotate-ccw" class="w-6 h-6"></i></button>
                             <button onclick="processOrganize()" class="bg-blue-600 text-white px-6 py-2 rounded-lg text-base font-bold hover:bg-blue-500 shadow-md">
-                                保存する
+                                処理を実行
                             </button>
                         </div>
                     </div>
@@ -479,6 +555,8 @@
 
         // --- CONVERT TEMPLATE ---
         function getConvertTemplate() {
+             if (appState.convert.processedFile) return getSuccessTemplate();
+
              const isImg2Pdf = appState.convert.mode === 'img2pdf';
              const isPdf2Img = appState.convert.mode === 'pdf2img';
 
@@ -512,7 +590,7 @@
                                 </div>
                             </div>
                             <button onclick="processImgToPdf()" class="w-full bg-blue-600 text-white py-4 rounded-xl text-lg font-bold hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20">
-                                PDFを作成
+                                処理を実行
                             </button>
                             `
                         }
@@ -533,7 +611,7 @@
                                 <button onclick="resetCurrentTab()" class="text-slate-400 hover:text-slate-200 p-2"><i data-lucide="x" class="w-6 h-6"></i></button>
                             </div>
                             <button onclick="processPdfToImg()" class="w-full bg-blue-600 text-white py-4 rounded-xl text-lg font-bold hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20">
-                                画像として保存 (ZIP)
+                                処理を実行 (ZIP出力)
                             </button>
                             `
                         }
@@ -544,6 +622,8 @@
 
         // --- NUMBER TEMPLATE ---
         function getNumberTemplate() {
+            if (appState.number.processedFile) return getSuccessTemplate();
+
             if (appState.number.files.length === 0) {
                 return getUploadBoxHTML('number', '.pdf');
             }
@@ -600,7 +680,7 @@
                     </div>
 
                     <button onclick="processNumber()" class="w-full bg-blue-600 text-white py-4 rounded-xl text-lg font-bold hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20">
-                        番号を追加してダウンロード
+                        処理を実行
                     </button>
                 </div>
             `;
@@ -623,24 +703,30 @@
         // --- Logic: Switch Convert Mode ---
         function switchConvertMode(mode) {
             appState.convert.mode = mode;
-            if (mode === 'img2pdf') appState.convert.images = [];
-            else appState.convert.pdfFiles = [];
+            if (mode === 'img2pdf') {
+                appState.convert.images = [];
+            } else {
+                appState.convert.pdfFiles = [];
+            }
+            appState.convert.processedFile = null;
             renderContent();
         }
 
-        // --- Logic: Reset ---
-        function resetCurrentTab() {
-            const tab = appState.currentTab;
+        // --- Logic: Reset Tab ---
+        function resetTab(tab) {
             if (tab === 'compress') {
                 appState.compress.files = [];
                 appState.compress.isProcessing = false;
+                appState.compress.processedFile = null;
             } else if (tab === 'split') {
                 appState.split.files = [];
                 appState.split.pdfDoc = null;
                 appState.split.splitPoints = [];
                 appState.split.visualsGenerated = false;
+                appState.split.processedFile = null;
             } else if (tab === 'merge') {
                 appState.merge.files = [];
+                appState.merge.processedFile = null;
             } else if (tab === 'organize') {
                 appState.organize.files = [];
                 appState.organize.pdfDoc = null;
@@ -649,15 +735,21 @@
                 appState.organize.pageOrder = [];
                 appState.organize.thumbnails = [];
                 appState.organize.visualsGenerated = false;
+                appState.organize.processedFile = null;
             } else if (tab === 'convert') {
                 if (appState.convert.mode === 'img2pdf') appState.convert.images = [];
                 else appState.convert.pdfFiles = [];
+                appState.convert.processedFile = null;
             } else if (tab === 'number') {
                 appState.number.files = [];
+                appState.number.processedFile = null;
             }
-            renderContent();
         }
 
+        function resetCurrentTab() {
+            resetTab(appState.currentTab);
+            renderContent();
+        }
 
         // --- Event Handling ---
 
@@ -734,7 +826,19 @@
 
                 container.addEventListener('drop', (e) => {
                     e.preventDefault();
-                    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                    
+                    // 外部からのファイルドロップの場合の処理
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        handleFiles(e.dataTransfer.files, 'multi');
+                        return;
+                    }
+
+                    const data = e.dataTransfer.getData('text/plain');
+                    if (!data) return;
+
+                    const fromIndex = parseInt(data);
+                    if (isNaN(fromIndex)) return;
+
                     const draggable = document.querySelector('.dragging');
                     const afterElement = getDragAfterElement(container, e.clientY);
                     
@@ -790,6 +894,7 @@
             if (tab === 'compress') {
                 appState.compress.files = [pdfFiles[0]];
                 appState.compress.isProcessing = true;
+                appState.compress.processedFile = null;
                 renderContent(); // Show spinner
                 setTimeout(() => processCompress(pdfFiles[0]), 500); 
                 return;
@@ -847,6 +952,43 @@
             return filename.replace(/\.[^/.]+$/, "");
         }
 
+        function downloadProcessedFile() {
+            const tab = appState.currentTab;
+            const file = appState[tab].processedFile;
+            if (file) {
+                saveAs(file, file.name);
+            }
+        }
+
+        function transferProcessedFile(targetTab) {
+            const sourceTab = appState.currentTab;
+            const file = appState[sourceTab].processedFile;
+            if(!file) return;
+            
+            // 遷移元のタブをリセット（戻ってきた時にクリーンな状態にするため）
+            resetTab(sourceTab);
+            
+            // タブを切り替え
+            appState.currentTab = targetTab;
+            
+            // 変換タブの場合はファイルタイプに応じてモードを切り替え
+            if (targetTab === 'convert') {
+                if (file.type === 'application/pdf') {
+                    appState.convert.mode = 'pdf2img';
+                } else if (file.type.startsWith('image/')) {
+                    appState.convert.mode = 'img2pdf';
+                }
+            }
+            
+            // 新しいタブの状態を初期化
+            resetTab(targetTab);
+
+            // ファイルを対象タブに渡す
+            handleFiles([file], targetTab === 'merge' ? 'multi' : 'single');
+            
+            renderTabs();
+        }
+
         // --- Logic: Compress ---
         async function processCompress(file) {
             try {
@@ -882,11 +1024,13 @@
 
                 const pdfBytes = await newPdfDoc.save();
                 const baseName = getBaseName(file.name);
-                download(pdfBytes, `${baseName}_compressed.pdf`, "application/pdf");
+                
+                const compressedBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const compressedFile = new File([compressedBlob], `${baseName}_compressed.pdf`, { type: 'application/pdf' });
                 
                 setTimeout(() => {
                     appState.compress.isProcessing = false;
-                    appState.compress.files = []; 
+                    appState.compress.processedFile = compressedFile;
                     renderContent();
                 }, 1000);
 
@@ -1003,7 +1147,8 @@
                         zip.file(`${baseName}_p${i + 1}.pdf`, pdfBytes);
                     }
                     const content = await zip.generateAsync({type:"blob"});
-                    saveAs(content, `${baseName}_split_all.zip`);
+                    appState.split.processedFile = new File([content], `${baseName}_split_all.zip`, { type: 'application/zip' });
+                    renderContent();
 
                 } else {
                     if (appState.split.splitPoints.length === 0) {
@@ -1013,16 +1158,13 @@
                     }
 
                     const zip = new JSZip();
-                    // Points define end of segments. Add 0 (start) and pageCount (end) implicitly in loop logic
                     
                     let previousSplit = 0;
-                    // Iterate through all split points + final segment
                     const allPoints = [...appState.split.splitPoints, pageCount];
 
                     for (let i = 0; i < allPoints.length; i++) {
                         const endPage = allPoints[i];
                         
-                        // Create page indices for this segment (0-based)
                         const pageIndices = [];
                         for(let p = previousSplit; p < endPage; p++) {
                             pageIndices.push(p);
@@ -1040,13 +1182,14 @@
                     }
 
                     const content = await zip.generateAsync({type:"blob"});
-                    saveAs(content, `${baseName}_split_custom.zip`);
+                    appState.split.processedFile = new File([content], `${baseName}_split_custom.zip`, { type: 'application/zip' });
+                    renderContent();
                 }
             } catch (e) {
                 console.error(e);
                 alert('エラーが発生しました: ' + e.message);
+                setLoading(false);
             }
-            setLoading(false);
         }
 
         // --- Logic: Merge ---
@@ -1067,12 +1210,15 @@
                 const firstFileName = appState.merge.files[0].name;
                 const baseName = getBaseName(firstFileName);
                 
-                download(pdfBytes, `${baseName}_merged.pdf`, "application/pdf");
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                appState.merge.processedFile = new File([blob], `${baseName}_merged.pdf`, { type: 'application/pdf' });
+                
+                renderContent();
             } catch(e) {
                 alert('結合中にエラーが発生しました。');
                 console.error(e);
+                setLoading(false);
             }
-            setLoading(false);
         }
 
         // --- Logic: Organize ---
@@ -1284,14 +1430,17 @@
                 });
 
                 const pdfBytes = await newPdf.save();
-                
                 const baseName = getBaseName(appState.organize.files[0].name);
-                download(pdfBytes, `${baseName}_organized.pdf`, "application/pdf");
+                
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                appState.organize.processedFile = new File([blob], `${baseName}_organized.pdf`, { type: 'application/pdf' });
+                
+                renderContent();
             } catch(e) {
                 console.error(e);
                 alert('保存中にエラーが発生しました');
+                setLoading(false);
             }
-            setLoading(false);
         }
 
         // --- Logic: Convert ---
@@ -1322,13 +1471,17 @@
                 
                 const pdfBytes = await pdfDoc.save();
                 const baseName = getBaseName(appState.convert.images[0].file.name);
-                download(pdfBytes, `${baseName}_converted.pdf`, "application/pdf");
+                
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                appState.convert.processedFile = new File([blob], `${baseName}_converted.pdf`, { type: 'application/pdf' });
+                
+                renderContent();
 
             } catch(e) {
                 alert('変換に失敗しました');
                 console.error(e);
+                setLoading(false);
             }
-            setLoading(false);
         }
 
         async function processPdfToImg() {
@@ -1358,12 +1511,14 @@
                 }
                 
                 const content = await zip.generateAsync({type:"blob"});
-                saveAs(content, `${baseName}_images.zip`);
+                appState.convert.processedFile = new File([content], `${baseName}_images.zip`, { type: 'application/zip' });
+                
+                renderContent();
 
              } catch(e) {
                  alert('変換に失敗しました');
+                 setLoading(false);
              }
-             setLoading(false);
         }
 
 
@@ -1410,13 +1565,17 @@
 
                 const pdfBytes = await pdfDoc.save();
                 const baseName = getBaseName(file.name);
-                download(pdfBytes, `${baseName}_numbered.pdf`, "application/pdf");
+                
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                appState.number.processedFile = new File([blob], `${baseName}_numbered.pdf`, { type: 'application/pdf' });
+                
+                renderContent();
 
             } catch(e) {
                 alert('処理に失敗しました');
                 console.error(e);
+                setLoading(false);
             }
-            setLoading(false);
         }
 
         // --- Helper: Loading Indicator ---
