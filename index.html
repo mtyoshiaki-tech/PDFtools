@@ -253,7 +253,11 @@
             },
             number: {
                 files: [],
-                processedFile: null
+                processedFile: null,
+                previewUrl: null,
+                pageCount: 0,
+                pageWidth: 0,
+                pageHeight: 0
             }
         };
 
@@ -322,6 +326,9 @@
                     break;
                 case 'number':
                     container.innerHTML = getNumberTemplate();
+                    if (appState.number.previewUrl) {
+                        setTimeout(updateNumberPreview, 0); // DOM反映後にプレビューテキストを更新
+                    }
                     break;
             }
             lucide.createIcons();
@@ -627,61 +634,83 @@
             if (appState.number.files.length === 0) {
                 return getUploadBoxHTML('number', '.pdf');
             }
+            
+            if (!appState.number.previewUrl) {
+                return `
+                    <div class="flex flex-col items-center justify-center h-[450px] text-center p-8">
+                        <div class="loader mb-6" style="width: 48px; height: 48px; border-width: 6px;"></div>
+                        <h2 class="text-2xl font-bold text-slate-200 mb-2">プレビューを作成中...</h2>
+                    </div>
+                `;
+            }
+
             return `
-                <div class="p-8">
-                    <div class="flex items-center justify-between bg-slate-900 p-5 rounded-xl mb-8 border border-slate-700">
+                <div class="flex flex-col h-full">
+                    <div class="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800">
                          <div class="flex items-center gap-4">
-                            <div class="bg-red-900/30 text-red-400 p-3 rounded-lg"><i data-lucide="file" class="w-6 h-6"></i></div>
-                            <p class="font-bold text-lg text-slate-200">${appState.number.files[0].name}</p>
+                            <div class="bg-red-900/30 text-red-400 p-2 rounded-lg"><i data-lucide="file" class="w-5 h-5"></i></div>
+                            <p class="font-bold text-slate-200">${appState.number.files[0].name}</p>
                         </div>
-                        <button onclick="resetCurrentTab()" class="text-slate-400 hover:text-slate-200 p-2"><i data-lucide="x" class="w-6 h-6"></i></button>
+                        <div class="flex gap-2">
+                             <button onclick="resetCurrentTab()" class="text-slate-400 hover:text-slate-200 px-4"><i data-lucide="rotate-ccw" class="w-6 h-6"></i></button>
+                            <button onclick="processNumber()" class="bg-blue-600 text-white px-6 py-2 rounded-lg text-base font-bold hover:bg-blue-500 shadow-md">
+                                処理を実行
+                            </button>
+                        </div>
                     </div>
 
-                    <div class="grid md:grid-cols-2 gap-8 mb-8">
-                        <div>
-                            <label class="block text-base font-bold text-slate-300 mb-3">表示位置</label>
-                            <div class="grid grid-cols-3 gap-3">
-                                ${['tl', 'tc', 'tr', 'bl', 'bc', 'br'].map(pos => `
-                                    <button onclick="setNumberPos('${pos}')" class="number-pos-btn border border-slate-600 rounded-xl p-4 hover:bg-slate-700 flex justify-center ${pos === 'bc' ? 'bg-blue-900/30 border-blue-500 text-blue-400' : 'text-slate-400'}" data-pos="${pos}">
-                                        <div class="w-10 h-12 border border-slate-500 bg-slate-800 relative shadow-sm">
-                                            <div class="absolute w-2 h-2 bg-current rounded-full ${
-                                                pos === 'tl' ? 'top-1.5 left-1.5' : 
-                                                pos === 'tc' ? 'top-1.5 left-1/2 -translate-x-1/2' :
-                                                pos === 'tr' ? 'top-1.5 right-1.5' :
-                                                pos === 'bl' ? 'bottom-1.5 left-1.5' :
-                                                pos === 'bc' ? 'bottom-1.5 left-1/2 -translate-x-1/2' :
-                                                'bottom-1.5 right-1.5'
-                                            }"></div>
-                                        </div>
-                                    </button>
-                                `).join('')}
+                    <div class="flex flex-col md:flex-row p-6 gap-8 h-full bg-slate-900 overflow-hidden">
+                        <!-- Preview Area -->
+                        <div class="flex-1 flex flex-col items-center justify-center bg-slate-800 rounded-xl border border-slate-700 p-4 relative overflow-hidden min-h-[400px]">
+                            <div class="text-slate-400 font-bold mb-3 text-sm">プレビュー (1ページ目)</div>
+                            <div class="relative shadow-xl bg-white flex-grow-0" style="aspect-ratio: ${appState.number.pageWidth} / ${appState.number.pageHeight}; max-height: calc(100% - 2rem); max-width: 100%;">
+                                <img src="${appState.number.previewUrl}" class="w-full h-full object-contain pointer-events-none">
+                                <div id="number-preview-text" class="absolute text-black leading-none whitespace-nowrap" style="transform-origin: center; z-index: 10;"></div>
                             </div>
                         </div>
-                        <div class="space-y-6">
+
+                        <!-- Settings Area -->
+                        <div class="w-full md:w-80 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
                             <div>
-                                <label class="block text-base font-bold text-slate-300 mb-3">文字サイズ</label>
-                                <select id="num-size" class="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-base text-slate-200 focus:border-blue-500 outline-none">
+                                <label class="block text-sm font-bold text-slate-300 mb-3">表示位置</label>
+                                <div class="grid grid-cols-3 gap-2">
+                                    ${['tl', 'tc', 'tr', 'bl', 'bc', 'br'].map(pos => `
+                                        <button onclick="setNumberPos('${pos}')" class="number-pos-btn border border-slate-600 rounded-lg p-3 hover:bg-slate-700 flex justify-center ${pos === selectedPos ? 'bg-blue-900/30 border-blue-500 text-blue-400' : 'text-slate-400'}" data-pos="${pos}">
+                                            <div class="w-8 h-10 border border-slate-500 bg-slate-800 relative shadow-sm">
+                                                <div class="absolute w-1.5 h-1.5 bg-current rounded-full ${
+                                                    pos === 'tl' ? 'top-1 left-1' : 
+                                                    pos === 'tc' ? 'top-1 left-1/2 -translate-x-1/2' :
+                                                    pos === 'tr' ? 'top-1 right-1' :
+                                                    pos === 'bl' ? 'bottom-1 left-1' :
+                                                    pos === 'bc' ? 'bottom-1 left-1/2 -translate-x-1/2' :
+                                                    'bottom-1 right-1'
+                                                }"></div>
+                                            </div>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-bold text-slate-300 mb-3">文字サイズ</label>
+                                <select id="num-size" onchange="updateNumberPreview()" class="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-200 focus:border-blue-500 outline-none">
                                     <option value="8">小 (8pt)</option>
                                     <option value="10">やや小 (10pt)</option>
                                     <option value="12" selected>標準 (12pt)</option>
                                     <option value="14">やや大 (14pt)</option>
                                     <option value="18">大 (18pt)</option>
                                     <option value="24">特大 (24pt)</option>
+                                    <option value="36">極大 (36pt)</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-base font-bold text-slate-300 mb-3">書式</label>
-                                <select id="num-format" class="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-base text-slate-200 focus:border-blue-500 outline-none">
-                                    <option value="fraction" selected>1 / 10 (ページ / 総数)</option>
+                                <label class="block text-sm font-bold text-slate-300 mb-3">書式</label>
+                                <select id="num-format" onchange="updateNumberPreview()" class="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-200 focus:border-blue-500 outline-none">
+                                    <option value="fraction" selected>1 / ${appState.number.pageCount} (ページ / 総数)</option>
                                     <option value="simple">1 (ページ番号のみ)</option>
                                 </select>
                             </div>
                         </div>
                     </div>
-
-                    <button onclick="processNumber()" class="w-full bg-blue-600 text-white py-4 rounded-xl text-lg font-bold hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20">
-                        処理を実行
-                    </button>
                 </div>
             `;
         }
@@ -698,6 +727,59 @@
                     btn.classList.add('text-slate-400');
                 }
             });
+            updateNumberPreview();
+        }
+
+        // 番号プレビューのスタイル更新
+        function updateNumberPreview() {
+            const textEl = document.getElementById('number-preview-text');
+            const containerEl = textEl?.parentElement;
+            const sizeSelect = document.getElementById('num-size');
+            const formatSelect = document.getElementById('num-format');
+            
+            if (!textEl || !containerEl || !sizeSelect || !formatSelect) return;
+
+            const sizePt = parseInt(sizeSelect.value);
+            const format = formatSelect.value;
+            const total = appState.number.pageCount;
+            const text = format === 'simple' ? '1' : `1 / ${total}`;
+            
+            textEl.textContent = text;
+            textEl.style.fontFamily = 'Helvetica, Arial, sans-serif';
+
+            const pageWidth = appState.number.pageWidth;
+            if (!pageWidth) return;
+            
+            // コンテナの実際のピクセル幅を取得してスケールを計算
+            const containerWidthPx = containerEl.clientWidth;
+            const scale = containerWidthPx / pageWidth;
+
+            const fontSizePx = sizePt * scale;
+            const marginPx = 20 * scale;
+
+            textEl.style.fontSize = `${fontSizePx}px`;
+
+            // 位置のリセット
+            textEl.style.top = 'auto';
+            textEl.style.bottom = 'auto';
+            textEl.style.left = 'auto';
+            textEl.style.right = 'auto';
+            textEl.style.transform = 'none';
+
+            if (selectedPos.includes('l')) {
+                textEl.style.left = `${marginPx}px`;
+            } else if (selectedPos.includes('r')) {
+                textEl.style.right = `${marginPx}px`;
+            } else { // center
+                textEl.style.left = '50%';
+                textEl.style.transform = 'translateX(-50%)';
+            }
+
+            if (selectedPos.includes('t')) {
+                textEl.style.top = `${marginPx}px`;
+            } else {
+                textEl.style.bottom = `${marginPx}px`;
+            }
         }
 
         // --- Logic: Switch Convert Mode ---
@@ -743,6 +825,8 @@
             } else if (tab === 'number') {
                 appState.number.files = [];
                 appState.number.processedFile = null;
+                appState.number.previewUrl = null;
+                appState.number.pageCount = 0;
             }
         }
 
@@ -897,10 +981,7 @@
                 appState.compress.processedFile = null;
                 renderContent(); // Show spinner
                 setTimeout(() => processCompress(pdfFiles[0]), 500); 
-                return;
-            }
-
-            if (type === 'single' || type === 'organize') {
+            } else if (type === 'single' || type === 'organize') {
                 if (tab === 'split') {
                     appState.split.files = [pdfFiles[0]];
                     appState.split.splitPoints = [];
@@ -915,7 +996,10 @@
                     renderContent();
                 } else if (tab === 'number') {
                     appState.number.files = [pdfFiles[0]];
-                    renderContent();
+                    appState.number.processedFile = null;
+                    appState.number.previewUrl = null;
+                    renderContent(); // プレビュー生成中の表示に切り替え
+                    loadNumberPreview(pdfFiles[0]);
                 }
             } else if (type === 'multi') {
                 if (tab === 'merge') {
@@ -1521,8 +1605,36 @@
              }
         }
 
-
         // --- Logic: Numbering ---
+
+        async function loadNumberPreview(file) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument({data: arrayBuffer});
+                const pdf = await loadingTask.promise;
+                appState.number.pageCount = pdf.numPages;
+                
+                // 1ページ目をプレビュー用にレンダリング
+                const page = await pdf.getPage(1);
+                const viewport = page.getViewport({scale: 1.0}); 
+                appState.number.pageWidth = viewport.width;
+                appState.number.pageHeight = viewport.height;
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                await page.render({canvasContext: context, viewport: viewport}).promise;
+                
+                appState.number.previewUrl = canvas.toDataURL();
+                renderContent(); // プレビュー画像が準備できたら再描画
+            } catch(e) {
+                console.error(e);
+                alert('プレビューの生成に失敗しました');
+                resetCurrentTab();
+            }
+        }
 
         async function processNumber() {
             if(appState.number.files.length === 0) return;
@@ -1599,6 +1711,13 @@
         lucide.createIcons();
         renderTabs();
         renderContent();
+
+        // 画面サイズ変更時にプレビューを再計算
+        window.addEventListener('resize', () => {
+            if (appState.currentTab === 'number' && appState.number.previewUrl) {
+                updateNumberPreview();
+            }
+        });
 
     </script>
 </body>
