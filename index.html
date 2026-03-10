@@ -961,7 +961,10 @@
         function handleFiles(files, type) {
             if(type === 'img') {
                 Array.from(files).forEach(file => {
-                    if(!file.type.startsWith('image/')) return;
+                    // PNGとJPEG形式のみを許可（WEBPやGIFなどによって発生するエラーを防ぐため）
+                    if(file.type !== 'image/jpeg' && file.type !== 'image/jpg' && file.type !== 'image/png') {
+                        return;
+                    }
                     const url = URL.createObjectURL(file);
                     appState.convert.images.push({ file, url });
                 });
@@ -1538,10 +1541,25 @@
                 for(const imgData of appState.convert.images) {
                     const buffer = await imgData.file.arrayBuffer();
                     let image;
-                    if(imgData.file.type === 'image/jpeg') {
-                        image = await pdfDoc.embedJpg(buffer);
-                    } else {
-                        image = await pdfDoc.embedPng(buffer);
+                    
+                    try {
+                        // まずは拡張子/MIMEタイプを信じて処理を試みる
+                        if(imgData.file.type === 'image/jpeg' || imgData.file.type === 'image/jpg') {
+                            image = await pdfDoc.embedJpg(buffer);
+                        } else {
+                            image = await pdfDoc.embedPng(buffer);
+                        }
+                    } catch (err) {
+                        // エラーが発生した場合（拡張子と実際のフォーマットが違う場合など）、もう一方でフォールバックする
+                        try {
+                            if(imgData.file.type === 'image/jpeg' || imgData.file.type === 'image/jpg') {
+                                image = await pdfDoc.embedPng(buffer);
+                            } else {
+                                image = await pdfDoc.embedJpg(buffer);
+                            }
+                        } catch (err2) {
+                            throw new Error(`画像 ${imgData.file.name} の読み込みに失敗しました。正しいPNG/JPEGファイルか確認してください。`);
+                        }
                     }
                     
                     const page = pdfDoc.addPage([image.width, image.height]);
@@ -1562,7 +1580,7 @@
                 renderContent();
 
             } catch(e) {
-                alert('変換に失敗しました');
+                alert(e.message || '変換に失敗しました');
                 console.error(e);
                 setLoading(false);
             }
