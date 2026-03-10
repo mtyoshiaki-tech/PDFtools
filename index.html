@@ -222,7 +222,8 @@
             compress: {
                 files: [],
                 isProcessing: false,
-                processedFile: null
+                processedFile: null,
+                level: 'medium'
             },
             split: {
                 files: [],
@@ -275,7 +276,7 @@
             });
 
             const titles = {
-                compress: ['PDFを圧縮', 'PDFの容量を約3MB程度を目安に圧縮します。選択すると自動で処理が始まります。'],
+                compress: ['PDFを圧縮', 'PDFの圧縮レベル（低・中・高）を選択して容量を調整します。'],
                 split: ['PDFを分割', 'ページ範囲を指定して分割(最大10分割)、または全ページを個別に保存します。'],
                 merge: ['PDFを結合', '複数のPDFファイルを一つのファイルに結合します。'],
                 organize: ['ページの整理', 'ページの削除、回転、並べ替えができます。'],
@@ -429,12 +430,50 @@
             }
 
             if (appState.compress.files.length === 0) {
-                return getUploadBoxHTML('compress', '.pdf', "クリックしてファイルを選択", "アップロード後、自動的に圧縮処理が始まります");
+                return getUploadBoxHTML('compress', '.pdf', "クリックしてファイルを選択", "アップロード後に圧縮レベルを選択できます");
             }
 
-            return getUploadBoxHTML('compress', '.pdf', "別のファイルを圧縮", "クリックして選択");
+            const file = appState.compress.files[0];
+            return `
+                <div class="flex flex-col h-full">
+                    <div class="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800">
+                         <div class="flex items-center gap-4">
+                            <div class="bg-red-900/30 text-red-400 p-2 rounded-lg"><i data-lucide="file" class="w-5 h-5"></i></div>
+                            <p class="font-bold text-slate-200">${file.name}</p>
+                        </div>
+                        <button onclick="resetCurrentTab()" class="text-slate-400 hover:text-slate-200 p-2"><i data-lucide="x" class="w-6 h-6"></i></button>
+                    </div>
+                    
+                    <div class="p-8 flex-grow flex flex-col justify-center items-center gap-8">
+                        <div class="w-full max-w-md">
+                            <label class="block text-base font-bold text-slate-300 mb-3">圧縮レベル</label>
+                            <select id="compress-level" onchange="setCompressLevel(this.value)" class="w-full bg-slate-900 border border-slate-600 rounded-xl p-4 text-base text-slate-200 focus:border-blue-500 outline-none">
+                                <option value="low" ${appState.compress.level === 'low' ? 'selected' : ''}>低 (約1MB目安 - 画質は下がります)</option>
+                                <option value="medium" ${appState.compress.level === 'medium' ? 'selected' : ''}>中 (約3MB目安 - バランス)</option>
+                                <option value="high" ${appState.compress.level === 'high' ? 'selected' : ''}>高 (約5MB目安 - 高画質)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="w-full max-w-md">
+                            <button onclick="startProcessCompress()" class="w-full bg-blue-600 text-white py-4 rounded-xl text-lg font-bold hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20">
+                                処理を実行
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
+        function setCompressLevel(level) {
+            appState.compress.level = level;
+        }
+
+        function startProcessCompress() {
+            if (appState.compress.files.length === 0) return;
+            appState.compress.isProcessing = true;
+            renderContent();
+            setTimeout(() => processCompress(appState.compress.files[0]), 50);
+        }
 
         // --- SPLIT TEMPLATE ---
         function getSplitTemplate() {
@@ -977,13 +1016,11 @@
 
             const tab = appState.currentTab;
 
-            // Handle "Compress" Auto-Trigger
             if (tab === 'compress') {
                 appState.compress.files = [pdfFiles[0]];
-                appState.compress.isProcessing = true;
+                appState.compress.isProcessing = false;
                 appState.compress.processedFile = null;
-                renderContent(); // Show spinner
-                setTimeout(() => processCompress(pdfFiles[0]), 500); 
+                renderContent(); 
             } else if (type === 'single' || type === 'organize') {
                 if (tab === 'split') {
                     appState.split.files = [pdfFiles[0]];
@@ -1086,9 +1123,20 @@
 
                 const totalPages = pdf.numPages;
                 
+                let scale = 1.5;
+                let quality = 0.7;
+                
+                if (appState.compress.level === 'low') {
+                    scale = 1.0;
+                    quality = 0.5;
+                } else if (appState.compress.level === 'high') {
+                    scale = 2.0;
+                    quality = 0.9;
+                }
+                
                 for (let i = 1; i <= totalPages; i++) {
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({scale: 1.5}); 
+                    const viewport = page.getViewport({scale: scale}); 
                     const canvas = document.createElement('canvas');
                     const context = canvas.getContext('2d');
                     canvas.height = viewport.height;
@@ -1096,7 +1144,7 @@
 
                     await page.render({canvasContext: context, viewport: viewport}).promise;
 
-                    const imgDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    const imgDataUrl = canvas.toDataURL('image/jpeg', quality);
                     const imgBytes = await fetch(imgDataUrl).then(res => res.arrayBuffer());
                     
                     const jpgImage = await newPdfDoc.embedJpg(imgBytes);
@@ -1562,12 +1610,29 @@
                         }
                     }
                     
-                    const page = pdfDoc.addPage([image.width, image.height]);
+                    // A4 size in points (72 dpi)
+                    const a4Width = 595.28;
+                    const a4Height = 842.89;
+                    const page = pdfDoc.addPage([a4Width, a4Height]);
+                    
+                    // Calculate scale to fit within A4 while preserving aspect ratio
+                    const imgWidth = image.width;
+                    const imgHeight = image.height;
+                    
+                    const scale = Math.min(a4Width / imgWidth, a4Height / imgHeight);
+                    
+                    const scaledWidth = imgWidth * scale;
+                    const scaledHeight = imgHeight * scale;
+                    
+                    // Center the image
+                    const x = (a4Width - scaledWidth) / 2;
+                    const y = (a4Height - scaledHeight) / 2;
+                    
                     page.drawImage(image, {
-                        x: 0,
-                        y: 0,
-                        width: image.width,
-                        height: image.height,
+                        x: x,
+                        y: y,
+                        width: scaledWidth,
+                        height: scaledHeight,
                     });
                 }
                 
