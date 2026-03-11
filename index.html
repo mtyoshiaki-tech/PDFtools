@@ -1610,29 +1610,12 @@
                         }
                     }
                     
-                    // A4 size in points (72 dpi)
-                    const a4Width = 595.28;
-                    const a4Height = 842.89;
-                    const page = pdfDoc.addPage([a4Width, a4Height]);
-                    
-                    // Calculate scale to fit within A4 while preserving aspect ratio
-                    const imgWidth = image.width;
-                    const imgHeight = image.height;
-                    
-                    const scale = Math.min(a4Width / imgWidth, a4Height / imgHeight);
-                    
-                    const scaledWidth = imgWidth * scale;
-                    const scaledHeight = imgHeight * scale;
-                    
-                    // Center the image
-                    const x = (a4Width - scaledWidth) / 2;
-                    const y = (a4Height - scaledHeight) / 2;
-                    
+                    const page = pdfDoc.addPage([image.width, image.height]);
                     page.drawImage(image, {
-                        x: x,
-                        y: y,
-                        width: scaledWidth,
-                        height: scaledHeight,
+                        x: 0,
+                        y: 0,
+                        width: image.width,
+                        height: image.height,
                     });
                 }
                 
