@@ -1610,12 +1610,39 @@
                         }
                     }
                     
-                    const page = pdfDoc.addPage([image.width, image.height]);
+                    // A4 size in points (72 dpi)
+                    const a4Short = 595.28;
+                    const a4Long = 842.89;
+                    
+                    let pageWidth = a4Short;
+                    let pageHeight = a4Long;
+
+                    // 画像が横長の場合はA4横サイズにする
+                    if (image.width > image.height) {
+                        pageWidth = a4Long;
+                        pageHeight = a4Short;
+                    }
+                    
+                    const page = pdfDoc.addPage([pageWidth, pageHeight]);
+                    
+                    // Calculate scale to fit within A4 while preserving aspect ratio
+                    const imgWidth = image.width;
+                    const imgHeight = image.height;
+                    
+                    const scale = Math.min(pageWidth / imgWidth, pageHeight / imgHeight);
+                    
+                    const scaledWidth = imgWidth * scale;
+                    const scaledHeight = imgHeight * scale;
+                    
+                    // Center the image
+                    const x = (pageWidth - scaledWidth) / 2;
+                    const y = (pageHeight - scaledHeight) / 2;
+                    
                     page.drawImage(image, {
-                        x: 0,
-                        y: 0,
-                        width: image.width,
-                        height: image.height,
+                        x: x,
+                        y: y,
+                        width: scaledWidth,
+                        height: scaledHeight,
                     });
                 }
                 
